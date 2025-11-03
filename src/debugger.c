@@ -32,6 +32,9 @@ void setBreakpoint(Debugger *dbg, unsigned long addr) {
     return;
   }
 
+  printf("[*] Read data at 0x%lx: 0x%lx\n", addr, data);
+  printf("[*] First byte (instruction): 0x%02x\n", (unsigned char)(data & 0xFF));
+
   // Save the original byte
   dbg->original_byte = data & 0xFF;
 
@@ -42,49 +45,38 @@ void setBreakpoint(Debugger *dbg, unsigned long addr) {
     return;
   }
 
+  // Verify it was written
+  unsigned long verify = ptrace(PTRACE_PEEKTEXT, dbg->pid, (void *)addr, NULL);
+
   dbg->breakpoint_addr = addr;
   dbg->breakpoint_set = 1;
   printf("[+] Breakpoint set at 0x%lx\n", addr);
 }
 
-unsigned long getBaseAddress(pid_t pid) {
-  char maps_path[64];
-  snprintf(maps_path, sizeof(maps_path), "/proc/%d/maps", pid);
-  FILE *maps = fopen(maps_path, "r");
-  if (!maps) {
-    perror("fopen maps");
-    return 0;
+
+void singleStep(Debugger *dbg) {
+  if (ptrace(PTRACE_SINGLESTEP, dbg->pid, NULL, NULL) == -1) {
+    perror("ptrace singlestep failed");
+    return;
   }
 
-  unsigned long base_addr = 0;
-  if (fscanf(maps, "%lx-%*lx %*s %*s %*s %*s", &base_addr) == 1) {
-    fclose(maps);
-    return base_addr;
-  }
-
-  fclose(maps);
-  return 0;
-}
-
-void setBreakpointAtMain(Debugger *dbg) {
-  unsigned long base = getBaseAddress(dbg->pid);
-  unsigned long main_offset = 0x1149; // from objdump
-  unsigned long main_addr = base + main_offset;
-
-  printf("[+] Setting breakpoint at main (0x%lx)...\n", main_addr);
-  setBreakpoint(dbg, main_addr);
+  int status;
+  waitpid(dbg->pid, &status, 0);
 }
 
 void continueExec(Debugger *dbg) {
+  printf("[*] About to continue process...\n");
   if (ptrace(PTRACE_CONT, dbg->pid, NULL, NULL) == -1) {
     fprintf(stderr, "error while continuing");
     return;
   }
 
   int status;
+  printf("[*] Waiting for process to stop...\n");
   waitpid(dbg->pid, &status, 0);
 
-  // proces stoped
+
+  // process stopped
   if (WIFSTOPPED(status)) {
     int signal = WSTOPSIG(status);
     printf("[+] Process stopped with signal: %d\n", signal);
@@ -93,9 +85,29 @@ void continueExec(Debugger *dbg) {
     if (signal == SIGTRAP) {
       printf("[+] Breakpoint hit!\n");
       readReg(dbg);
+      
+      if (dbg->breakpoint_set) {
+        printf("[+] Restoring breakpoint...\n");
+        
+        clearBreakPoint(dbg);
+        
+        struct user_regs_struct regs;
+        ptrace(PTRACE_GETREGS, dbg->pid, NULL, &regs);
+        regs.rip -= 1;
+        ptrace(PTRACE_SETREGS, dbg->pid, NULL, &regs);
+        
+        printf("[+] Single-stepping over instruction...\n");
+        singleStep(dbg);
+        
+        setBreakpoint(dbg, dbg->breakpoint_addr);
+      }
+    } else {
+      printf("[-] Unexpected signal: %d\n", signal);
     }
   } else if (WIFEXITED(status)) {
     printf("[+] Process exited with code: %d\n", WEXITSTATUS(status));
+  } else if (WIFSIGNALED(status)) {
+    printf("[+] Process terminated by signal: %d\n", WTERMSIG(status));
   }
 }
 
@@ -105,11 +117,9 @@ void clearBreakPoint(Debugger *dbg) {
     return;
   }
 
-  // get the modified byte with the breakpoint addr
   unsigned long data =
       ptrace(PTRACE_PEEKTEXT, dbg->pid, (void *)dbg->breakpoint_addr, NULL);
 
-  // restore the original addr
   unsigned long restored = (data & ~0xFF) | dbg->original_byte;
   ptrace(PTRACE_POKETEXT, dbg->pid, (void *)dbg->breakpoint_addr,
          (void *)restored);

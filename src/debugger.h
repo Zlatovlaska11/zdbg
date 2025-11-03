@@ -17,6 +17,5 @@ void readReg(Debugger *dbg);
 void continueExec(Debugger *dbg);
 void clearBreakPoint(Debugger *dbg);
 void setBreakpointAtMain(Debugger *dbg);
-unsigned long getBaseAddress(pid_t pid);
 
 #endif

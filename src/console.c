@@ -12,6 +12,36 @@ void Executor(char *line, Debugger *dbg) {
   }
 }
 
+unsigned long getBaseAddress(pid_t pid) {
+  char maps_path[64];
+  snprintf(maps_path, sizeof(maps_path), "/proc/%d/maps", pid);
+  FILE *maps = fopen(maps_path, "r");
+  if (!maps) {
+    perror("fopen maps");
+    return 0;
+  }
+
+  unsigned long base_addr = 0;
+  // Read regions to find the executable code section
+  char line[256];
+  while (fgets(line, sizeof(line), maps)) {
+    unsigned long start, end, offset;
+    char perms[5];
+    char filename[256];
+    
+    if (sscanf(line, "%lx-%lx %s %lx %*s %*s %255s", &start, &end, perms, &offset, filename) >= 4) {
+      // Look for executable region with non-zero offset (the actual code)
+      if (perms[2] == 'x' && offset > 0) {
+        base_addr = start;
+        printf("[*] Found executable section at 0x%lx (file offset: 0x%lx)\n", start, offset);
+        break;
+      }
+    }
+  }
+
+  fclose(maps);
+  return base_addr;
+}
 void shell(Debugger *dbg) {
   char input[256];
 
@@ -32,10 +62,17 @@ void shell(Debugger *dbg) {
     } else if (strcmp(input, "continue") == 0 || strcmp(input, "c") == 0) {
       continueExec(dbg);
     } else if (strncmp(input, "break ", 6) == 0) {
-      unsigned long addr = strtoul(input + 6, NULL, 16);
+      unsigned long offset = strtoul(input + 6, NULL, 16);
       unsigned long base = getBaseAddress(dbg->pid);
-      unsigned long main_offset = addr;
-      unsigned long addrFull = base + main_offset;
+
+      if (base == 0) {
+        printf("[-] Failed to get base address\n");
+        continue;
+      }
+
+      unsigned long addrFull = base + offset;
+      printf("[*] Base: 0x%lx, Offset: 0x%lx, Full Address: 0x%lx\n", base,
+             offset, addrFull);
 
       setBreakpoint(dbg, addrFull);
     } else if (strcmp(input, "clearbreak") == 0) {
@@ -43,7 +80,8 @@ void shell(Debugger *dbg) {
     } else if (strcmp(input, "help") == 0) {
       printf("Commands:\n");
       printf("  regs           - Show registers\n");
-      printf("  break <addr>   - Set breakpoint at hex address\n");
+      printf(
+          "  break <addr>   - Set breakpoint at hex offset (from objdump)\n");
       printf("  clearbreak     - Clear current breakpoint\n");
       printf("  continue (c)   - Continue execution\n");
       printf("  quit (q)       - Detach and quit\n");

@@ -55,7 +55,7 @@ Note the PID it prints (e.g., `[1] 12345`).
 sudo ./debugger 12345
 ```
 
-Replace `12345` with the PID from step 5.
+Replace `12345` with the PID from step 4.
 
 ### 6. Use the debugger
 

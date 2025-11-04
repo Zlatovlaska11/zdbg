@@ -71,7 +71,6 @@ void setBreakpoint(Debugger *dbg, unsigned long addr, BreakPoint *bp) {
 
   bp->bp_addr = addr;
   dbg->breakpoint_set = 1;
-  dbg->breakpoint_count++;
   printf("[+] Breakpoint set at 0x%lx\n", addr);
 }
 

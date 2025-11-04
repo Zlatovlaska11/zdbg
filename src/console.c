@@ -3,15 +3,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-void Executor(char *line, Debugger *dbg) {
-
-  char *args = strtok(line, " ");
-
-  if (strcmp("sreg", line)) {
-    readReg(dbg);
-  }
-}
-
 unsigned long getBaseAddress(pid_t pid) {
   char maps_path[64];
   snprintf(maps_path, sizeof(maps_path), "/proc/%d/maps", pid);

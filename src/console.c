@@ -22,18 +22,16 @@ unsigned long getBaseAddress(pid_t pid) {
   }
 
   unsigned long base_addr = 0;
-  // Read regions to find the executable code section
+  // Read the first executable region (r-xp means readable and executable)
   char line[256];
   while (fgets(line, sizeof(line), maps)) {
-    unsigned long start, end, offset;
+    unsigned long start, end;
     char perms[5];
-    char filename[256];
-    
-    if (sscanf(line, "%lx-%lx %s %lx %*s %*s %255s", &start, &end, perms, &offset, filename) >= 4) {
-      // Look for executable region with non-zero offset (the actual code)
-      if (perms[2] == 'x' && offset > 0) {
+
+    if (sscanf(line, "%lx-%lx %s", &start, &end, perms) == 3) {
+      // Look for first executable region
+      if (perms[2] == 'x') {
         base_addr = start;
-        printf("[*] Found executable section at 0x%lx (file offset: 0x%lx)\n", start, offset);
         break;
       }
     }
@@ -42,6 +40,7 @@ unsigned long getBaseAddress(pid_t pid) {
   fclose(maps);
   return base_addr;
 }
+
 void shell(Debugger *dbg) {
   char input[256];
 
@@ -74,17 +73,37 @@ void shell(Debugger *dbg) {
       printf("[*] Base: 0x%lx, Offset: 0x%lx, Full Address: 0x%lx\n", base,
              offset, addrFull);
 
-      setBreakpoint(dbg, addrFull);
-    } else if (strcmp(input, "clearbreak") == 0) {
-      clearBreakPoint(dbg);
+      addBreakpoint(dbg, addrFull);
+    } else if (strcmp(input, "breaks") == 0) {
+      listBreakpoints(dbg);
+    } else if (strncmp(input, "delete ", 7) == 0) {
+      int index = atoi(input + 7);
+      deleteBreakpoint(dbg, index);
+
+    } else if (strncmp(input, "read ", 5) == 0) {
+      unsigned long addr = strtoul(input + 5, NULL, 16);
+      readMemory(dbg, addr, 64);
+    } else if (strcmp(input, "vars") == 0) {
+      listVariables(dbg->pid, "./test"); // pass your binary path
+
+    } else if (strncmp(input, "readint ", 8) == 0) {
+      unsigned long addr = strtoul(input + 8, NULL, 16);
+      unsigned int val = readInt(dbg, addr);
+      printf("[*] Int at 0x%lx: 0x%08x (%d)\n", addr, val, (int)val);
+    } else if (strncmp(input, "stack ", 6) == 0) {
+      int offset = atoi(input + 6);
+      readStack(dbg, offset);
     } else if (strcmp(input, "help") == 0) {
       printf("Commands:\n");
-      printf("  regs           - Show registers\n");
-      printf(
-          "  break <addr>   - Set breakpoint at hex offset (from objdump)\n");
-      printf("  clearbreak     - Clear current breakpoint\n");
-      printf("  continue (c)   - Continue execution\n");
-      printf("  quit (q)       - Detach and quit\n");
+      printf("  regs                - Show all registers\n");
+      printf("  break <addr>        - Set breakpoint at hex offset\n");
+      printf("  clearbreak          - Clear current breakpoint\n");
+      printf("  continue (c)        - Continue execution\n");
+      printf("  read <addr>         - Read 64 bytes from hex address\n");
+      printf("  readint <addr>      - Read 4-byte integer from address\n");
+      printf("  readlong <addr>     - Read 8-byte long from address\n");
+      printf("  stack <offset>      - Read from RBP + offset\n");
+      printf("  quit (q)            - Detach and quit\n");
     } else if (strlen(input) > 0) {
       printf("Unknown command: %s\n", input);
     }

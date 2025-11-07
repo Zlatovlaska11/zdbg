@@ -14,13 +14,13 @@ pid_t spawn_process(const char *program, char *const argv[]) {
 
   if (pid < 0) {
     perror("fork failed");
-    return -1;
+    return -1; 
   }
 
   if (pid == 0) {
     execvp(program, argv);
     perror("execvp failed");
-    _exit(1);
+    _exit(1); 
   }
 
   return pid;
@@ -28,17 +28,9 @@ pid_t spawn_process(const char *program, char *const argv[]) {
 
 int main(int argc, char *argv[]) {
 
-  if (argc < 1) {
-    fprintf(stderr, "provide a file please");
-    exit(1);
-  }
+  char *args[] = {"./test", NULL};
 
-  char *filename;
-  sprintf(filename, "./%s", argv[1]);
-
-  char *args[] = {filename, NULL};
-
-  pid_t pid = spawn_process(filename, args);
+  pid_t pid = spawn_process("./test", args);
 
   Debugger *dbg = calloc(1, sizeof(Debugger));
 
